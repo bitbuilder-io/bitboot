@@ -90,6 +90,7 @@ jobs:
         id: release_notes
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          REPO="${{ github.repository }}"
           cat > release_notes.md << EOF
           # BitBoot ${VERSION}
 
@@ -120,7 +121,7 @@ jobs:
           
           \`\`\`bash
           # Download the compressed USB image
-          wget https://github.com/\${GITHUB_REPOSITORY}/releases/download/${VERSION}/bitboot-x86_64.img.xz
+          wget https://github.com/${REPO}/releases/download/${VERSION}/bitboot-x86_64.img.xz
           
           # Decompress and write to USB (replace /dev/sdX with your USB device)
           xzcat bitboot-x86_64.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
@@ -141,7 +142,7 @@ jobs:
           
           ## Documentation
           
-          See the [README](https://github.com/\${GITHUB_REPOSITORY}#readme) for detailed usage instructions.
+          See the [README](https://github.com/${REPO}#readme) for detailed usage instructions.
           EOF
           cat release_notes.md
 
