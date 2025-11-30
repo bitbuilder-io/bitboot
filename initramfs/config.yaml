@@ -1,0 +1,140 @@
+# BitBoot Initramfs Configuration
+# This file defines how the custom initramfs is built using dracut
+#
+# The initramfs must contain:
+# - systemd v258 or higher (rd.systemd.pull was introduced in v258)
+# - Network stack (networkd, resolved)
+# - Compression support (xz, zstd, gzip)
+# - Loop device support
+# - ZFS kernel modules and tools
+# - Minimal shell for recovery
+
+# Dracut configuration
+dracut:
+  # Include these dracut modules
+  add_modules:
+    - systemd
+    - systemd-initrd
+    - systemd-networkd
+    - systemd-resolved
+    - systemd-importd
+    - network
+    - network-manager
+    - kernel-network-modules
+    - loop
+    - dm
+    - lvm
+    - crypt
+    - zfs
+    - rescue
+    - shutdown
+    - usrmount
+    - base
+    - fs-lib
+    - rootfs-block
+
+  # Always include these drivers
+  add_drivers:
+    - loop
+    - overlay
+    - squashfs
+    - virtio_net
+    - virtio_blk
+    - virtio_scsi
+    - e1000
+    - e1000e
+    - igb
+    - ixgbe
+    - nvme
+    - ahci
+    - xhci_hcd
+    - ehci_hcd
+    - usb_storage
+    - sd_mod
+    - ext4
+    - xfs
+    - btrfs
+    - vfat
+    - zfs
+
+  # Include these binaries in initramfs
+  install_items:
+    - /usr/bin/curl
+    - /usr/bin/wget
+    - /usr/bin/xz
+    - /usr/bin/zstd
+    - /usr/bin/gzip
+    - /usr/bin/gunzip
+    - /usr/bin/bzip2
+    - /usr/bin/bunzip2
+    - /usr/bin/losetup
+    - /usr/bin/mount
+    - /usr/bin/umount
+    - /usr/bin/ip
+    - /usr/bin/ss
+    - /usr/bin/ping
+    - /usr/bin/bash
+    - /usr/bin/sh
+    - /usr/bin/cat
+    - /usr/bin/ls
+    - /usr/bin/cp
+    - /usr/bin/mv
+    - /usr/bin/rm
+    - /usr/bin/mkdir
+    - /usr/bin/chmod
+    - /usr/bin/chown
+    - /usr/bin/ln
+    - /usr/bin/grep
+    - /usr/bin/awk
+    - /usr/bin/sed
+    - /usr/bin/vi
+    - /usr/bin/less
+    - /usr/sbin/parted
+    - /usr/sbin/gdisk
+    - /usr/sbin/sgdisk
+    - /usr/sbin/fdisk
+    - /usr/sbin/mkfs.ext4
+    - /usr/sbin/mkfs.xfs
+    - /usr/sbin/mkfs.vfat
+    - /usr/sbin/cryptsetup
+    - /usr/sbin/zpool
+    - /usr/sbin/zfs
+    - /usr/sbin/zdb
+
+  # Enable systemd in initrd
+  systemd: yes
+
+  # Compress with zstd for best size/speed ratio
+  compress: zstd
+
+  # Include firmware for hardware support
+  firmware:
+    - amd-ucode
+    - intel-ucode
+    - linux-firmware
+
+# Kernel configuration
+kernel:
+  # Use the linux-lts kernel for stability
+  package: linux-lts
+  
+  # Kernel modules to include
+  modules:
+    - zfs
+    - loop
+    - overlay
+    - squashfs
+
+# systemd services to enable in initrd
+systemd_services:
+  - systemd-networkd.service
+  - systemd-resolved.service
+  - systemd-importd.service
+  - systemd-import-generator
+
+# Custom hooks for bitboot-specific functionality
+hooks:
+  pre_build:
+    - fetch-zfs-modules.sh
+  post_build:
+    - verify-initramfs.sh

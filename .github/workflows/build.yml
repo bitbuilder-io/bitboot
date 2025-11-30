@@ -1,0 +1,298 @@
+# BitBoot Build Workflow
+# Main CI/CD pipeline for building the BitBoot multiboot USB system
+#
+# This workflow builds each distro profile as a separate job, allowing
+# individual profiles to fail without blocking others.
+#
+# Triggers:
+# - Push to main branch
+# - Pull requests to main branch
+# - Manual workflow dispatch
+#
+# Outputs:
+# - Individual UKI files per profile
+# - bitboot-x86_64.img (Bootable USB image)
+
+name: Build BitBoot
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sign_uki:
+        description: 'Sign UKI for Secure Boot'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  BUILD_DIR: build
+
+permissions:
+  contents: read
+
+jobs:
+  # Validate configuration before building
+  validate:
+    name: Validate Configuration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate loader configuration
+        run: |
+          echo "=== Checking loader.conf ==="
+          cat config/loader/loader.conf
+          echo ""
+          
+          echo "=== Checking boot entries ==="
+          for entry in config/loader/entries/*.conf; do
+            echo "--- ${entry} ---"
+            cat "${entry}"
+            echo ""
+          done
+
+      - name: Validate kernel cmdline profiles
+        run: |
+          echo "=== Kernel command line profiles ==="
+          for conf in config/cmdline.d/profiles/*.conf; do
+            echo "--- ${conf} ---"
+            cat "${conf}"
+            echo ""
+          done
+
+      - name: Check for shell script issues
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            echo "Running shellcheck..."
+            shellcheck scripts/*.sh || true
+          else
+            echo "shellcheck not installed, skipping..."
+          fi
+
+  # Build each profile as a separate job
+  build-ucore:
+    name: uCore
+    needs: validate
+    uses: ./.github/workflows/build-uki.yml
+    with:
+      profile: ucore
+
+  build-flatcar:
+    name: Flatcar Linux
+    needs: validate
+    uses: ./.github/workflows/build-uki.yml
+    with:
+      profile: flatcar
+
+  build-alpine-zfs-installer:
+    name: Alpine ZFS Installer
+    needs: validate
+    uses: ./.github/workflows/build-uki.yml
+    with:
+      profile: alpine-zfs-installer
+
+  build-alpine-netboot:
+    name: Alpine Netboot
+    needs: validate
+    uses: ./.github/workflows/build-uki.yml
+    with:
+      profile: alpine-netboot
+
+  build-nixos-kexec:
+    name: NixOS Kexec
+    needs: validate
+    uses: ./.github/workflows/build-uki.yml
+    with:
+      profile: nixos-kexec
+
+  build-vyos:
+    name: VyOS
+    needs: validate
+    uses: ./.github/workflows/build-uki.yml
+    with:
+      profile: vyos
+
+  build-bitboot:
+    name: BitBoot Recovery
+    needs: validate
+    uses: ./.github/workflows/build-uki.yml
+    with:
+      profile: bitboot
+
+  # Build chainload profiles (ZFSBootMenu, netboot.xyz)
+  build-chainload:
+    name: Build Chainload Profiles
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    container:
+      image: registry.fedoraproject.org/fedora:43
+      options: --privileged
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          dnf install -y curl wget xz file
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Fetch ZFSBootMenu and netboot.xyz
+        run: |
+          mkdir -p ${BUILD_DIR}/efi
+          ./scripts/fetch-deps.sh --skip-alpine --output ${BUILD_DIR}/deps
+          # Copy the EFI files
+          cp ${BUILD_DIR}/deps/zfsbootmenu/*.efi ${BUILD_DIR}/efi/ 2>/dev/null || true
+          cp ${BUILD_DIR}/deps/netboot/*.efi ${BUILD_DIR}/efi/ 2>/dev/null || true
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
+
+      - name: Verify chainload EFIs
+        run: |
+          echo "=== Chainload EFI files ==="
+          ls -la ${BUILD_DIR}/efi/ || true
+          for f in ${BUILD_DIR}/efi/*.efi; do
+            [ -f "$f" ] && file "$f"
+          done
+
+      - name: Upload chainload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: uki-chainload
+          path: ${{ env.BUILD_DIR }}/efi/
+          if-no-files-found: warn
+
+  # Assemble all UKIs into a bootable USB image
+  assemble-usb:
+    name: Assemble USB Image
+    needs:
+      - build-ucore
+      - build-flatcar
+      - build-alpine-zfs-installer
+      - build-alpine-netboot
+      - build-nixos-kexec
+      - build-vyos
+      - build-bitboot
+      - build-chainload
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    container:
+      image: registry.fedoraproject.org/fedora:43
+      options: --privileged
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          dnf install -y \
+            make \
+            parted \
+            gdisk \
+            dosfstools \
+            e2fsprogs \
+            util-linux \
+            coreutils \
+            findutils \
+            file \
+            curl \
+            wget \
+            xz
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Download all UKI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: uki-*
+          path: ${{ env.BUILD_DIR }}/efi-artifacts/
+          merge-multiple: false
+
+      - name: Organize UKI files
+        run: |
+          mkdir -p ${BUILD_DIR}/efi
+          # Move all EFI files to the efi directory
+          find ${BUILD_DIR}/efi-artifacts -name "*.efi" -exec cp {} ${BUILD_DIR}/efi/ \;
+          echo "=== Collected UKI files ==="
+          ls -la ${BUILD_DIR}/efi/
+
+      - name: Fetch Alpine dependencies for USB
+        run: |
+          ./scripts/fetch-deps.sh --skip-zbm --skip-netboot --output ${BUILD_DIR}/deps
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
+
+      - name: Create USB image
+        run: |
+          ./scripts/create-usb.sh --output ${BUILD_DIR}/bitboot-x86_64.img
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
+
+      - name: Verify USB image
+        run: |
+          echo "=== USB Image Info ==="
+          file ${BUILD_DIR}/bitboot-x86_64.img || true
+          ls -lh ${BUILD_DIR}/bitboot-x86_64.img || true
+
+      - name: Upload USB image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitboot-usb-image
+          path: ${{ env.BUILD_DIR }}/bitboot-x86_64.img
+          if-no-files-found: warn
+          compression-level: 9
+
+  # Summary job to report build status
+  summary:
+    name: Build Summary
+    needs:
+      - build-ucore
+      - build-flatcar
+      - build-alpine-zfs-installer
+      - build-alpine-netboot
+      - build-nixos-kexec
+      - build-vyos
+      - build-bitboot
+      - build-chainload
+      - assemble-usb
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check build results
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Profile | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| uCore | ${{ needs.build-ucore.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Flatcar Linux | ${{ needs.build-flatcar.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Alpine ZFS Installer | ${{ needs.build-alpine-zfs-installer.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Alpine Netboot | ${{ needs.build-alpine-netboot.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| NixOS Kexec | ${{ needs.build-nixos-kexec.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| VyOS | ${{ needs.build-vyos.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| BitBoot Recovery | ${{ needs.build-bitboot.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Chainload (ZBM/netboot) | ${{ needs.build-chainload.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| USB Image Assembly | ${{ needs.assemble-usb.result }} |" >> $GITHUB_STEP_SUMMARY
