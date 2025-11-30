@@ -56,7 +56,7 @@ install() {
     mkdir -p "${initdir}/run/machines"
     
     # Enable the services
-    systemctl -q --root "$initdir" enable systemd-importd.socket 2>/dev/null || true
+    systemctl -q --root "${initdir}" enable systemd-importd.socket 2>/dev/null || true
 }
 
 installkernel() {

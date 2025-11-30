@@ -203,7 +203,7 @@ build_uki() {
     grep -v '^\s*#' "${cmdline_file}" | grep -v '^\s*$' | tr '\n' ' ' > "${cmdline_temp}"
     echo "" >> "${cmdline_temp}"
     
-    log_info "  Cmdline: $(cat ${cmdline_temp})"
+    log_info "  Cmdline: $(tr '\n' ' ' < "${cmdline_temp}")"
     
     if command -v ukify >/dev/null 2>&1; then
         local ukify_args=(
