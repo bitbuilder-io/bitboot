@@ -2,7 +2,7 @@
 # This file defines how the custom initramfs is built using dracut
 #
 # The initramfs must contain:
-# - systemd v258+ with rd.systemd.pull support
+# - systemd v258 or higher (rd.systemd.pull was introduced in v258)
 # - Network stack (networkd, resolved)
 # - Compression support (xz, zstd, gzip)
 # - Loop device support
