@@ -32,10 +32,15 @@ on:
 env:
   BUILD_DIR: build
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build BitBoot
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     container:
       image: registry.fedoraproject.org/fedora:41
       options: --privileged
@@ -151,6 +156,8 @@ jobs:
   validate:
     name: Validate Configuration
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
       - name: Checkout repository

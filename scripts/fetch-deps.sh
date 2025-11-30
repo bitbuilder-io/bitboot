@@ -138,7 +138,11 @@ fetch_zfsbootmenu() {
     
     # Also download the recovery image if available
     local zbm_recovery_url
-    zbm_recovery_url=$(curl -fsSL "${zbm_api}/latest" | grep -oP '"browser_download_url":\s*"\K[^"]+recovery[^"]+\.EFI' | head -1 || true)
+    if [[ "${ZBM_VERSION}" == "latest" ]]; then
+        zbm_recovery_url=$(curl -fsSL "${zbm_api}/latest" | grep -oP '"browser_download_url":\s*"\K[^"]+recovery[^"]+\.EFI' | head -1 || true)
+    else
+        zbm_recovery_url=$(curl -fsSL "${zbm_api}/tags/${ZBM_VERSION}" | grep -oP '"browser_download_url":\s*"\K[^"]+recovery[^"]+\.EFI' | head -1 || true)
+    fi
     if [[ -n "${zbm_recovery_url}" ]]; then
         download_file "${zbm_recovery_url}" "${OUTPUT_DIR}/zbm/zfsbootmenu-recovery.efi" || true
     fi

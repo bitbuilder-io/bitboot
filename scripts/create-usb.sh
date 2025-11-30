@@ -172,14 +172,15 @@ mkdir -p "${MOUNT_POINT}/nixos"
 mkdir -p "${MOUNT_POINT}/vyos"
 
 # Copy BitBoot UKIs
-if [[ -d "${BUILD_DIR}/efi" ]]; then
+UKI_BUILD_DIR="$(dirname "${UKI_PATH}")"
+if [[ -d "${UKI_BUILD_DIR}/efi" ]]; then
     log_info "Installing BitBoot UKIs..."
     mkdir -p "${MOUNT_POINT}/EFI/bitboot"
-    cp "${BUILD_DIR}/efi/"*.efi "${MOUNT_POINT}/EFI/bitboot/" 2>/dev/null || true
+    cp "${UKI_BUILD_DIR}/efi/"*.efi "${MOUNT_POINT}/EFI/bitboot/" 2>/dev/null || true
     
     # Use bitboot.efi as the default UEFI boot entry
-    if [[ -f "${BUILD_DIR}/efi/bitboot.efi" ]]; then
-        cp "${BUILD_DIR}/efi/bitboot.efi" "${MOUNT_POINT}/EFI/BOOT/BOOTX64.EFI"
+    if [[ -f "${UKI_BUILD_DIR}/efi/bitboot.efi" ]]; then
+        cp "${UKI_BUILD_DIR}/efi/bitboot.efi" "${MOUNT_POINT}/EFI/BOOT/BOOTX64.EFI"
     fi
 elif [[ -f "${UKI_PATH}" ]]; then
     log_info "Installing BitBoot UKI (legacy single-file mode)..."
