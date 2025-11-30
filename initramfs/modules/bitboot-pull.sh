@@ -80,7 +80,7 @@ install() {
     mkdir -p "${initdir}/run/systemd/machines"
     
     # Enable socket activation for importd
-    systemctl -q --root "$initdir" enable systemd-importd.socket 2>/dev/null || true
+    systemctl -q --root "${initdir}" enable systemd-importd.socket 2>/dev/null || true
     
     # Install a hook script to ensure network is up before pulling
     inst_hook pre-mount 10 "$moddir/bitboot-pull-premount.sh"
