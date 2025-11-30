@@ -4,7 +4,7 @@
 # Build: podman build -t bitboot-builder .
 # Run:   podman run --rm -v $(pwd):/workspace:Z bitboot-builder make all
 
-FROM registry.fedoraproject.org/fedora:41
+FROM registry.fedoraproject.org/fedora:43
 
 LABEL maintainer="BitBoot Project"
 LABEL description="Build environment for BitBoot multiboot USB system"
@@ -38,7 +38,7 @@ RUN dnf install -y \
     wget \
     # ZFS (from RPM Fusion)
     && dnf install -y \
-        https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-41.noarch.rpm \
+        https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-43.noarch.rpm \
     && dnf install -y zfs || true \
     # Kernel and firmware
     && dnf install -y \

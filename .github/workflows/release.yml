@@ -27,7 +27,7 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     container:
-      image: registry.fedoraproject.org/fedora:41
+      image: registry.fedoraproject.org/fedora:43
       options: --privileged
 
     steps:
