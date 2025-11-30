@@ -1,0 +1,98 @@
+# Reusable workflow for building individual UKI profiles
+# This workflow can be called by other workflows to build a single profile
+#
+# Usage:
+#   jobs:
+#     build-profile:
+#       uses: ./.github/workflows/build-uki.yml
+#       with:
+#         profile: fedora-coreos
+
+name: Build UKI Profile
+
+on:
+  workflow_call:
+    inputs:
+      profile:
+        description: 'Profile name to build (e.g., fedora-coreos, alpine-netboot)'
+        required: true
+        type: string
+    outputs:
+      artifact-name:
+        description: 'Name of the uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact-name }}
+
+env:
+  BUILD_DIR: build
+
+jobs:
+  build:
+    name: Build ${{ inputs.profile }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    container:
+      image: registry.fedoraproject.org/fedora:43
+      options: --privileged
+    outputs:
+      artifact-name: ${{ steps.upload.outputs.artifact-name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          dnf install -y \
+            make \
+            gcc \
+            binutils \
+            systemd-boot-unsigned \
+            systemd-ukify \
+            dracut \
+            xz \
+            zstd \
+            gzip \
+            bzip2 \
+            curl \
+            wget \
+            kernel \
+            kernel-devel \
+            linux-firmware \
+            util-linux \
+            coreutils \
+            findutils \
+            file
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Fetch dependencies
+        run: make deps
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
+
+      - name: Build initramfs
+        run: make initramfs
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
+
+      - name: Build UKI for ${{ inputs.profile }}
+        run: |
+          ./scripts/build-uki.sh --profile "${{ inputs.profile }}" --output "${BUILD_DIR}/efi/${{ inputs.profile }}.efi"
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
+
+      - name: Verify UKI
+        run: |
+          echo "=== UKI Info for ${{ inputs.profile }} ==="
+          file "${BUILD_DIR}/efi/${{ inputs.profile }}.efi" || true
+          ls -lh "${BUILD_DIR}/efi/${{ inputs.profile }}.efi" || true
+
+      - name: Upload UKI artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: uki-${{ inputs.profile }}
+          path: ${{ env.BUILD_DIR }}/efi/${{ inputs.profile }}.efi
+          if-no-files-found: error
