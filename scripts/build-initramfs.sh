@@ -84,9 +84,34 @@ mkdir -p "$(dirname "${OUTPUT_FILE}")"
 
 # Detect kernel version
 if [[ -z "${KERNEL_VERSION}" ]]; then
+    # First try uname -r (works when running on the same kernel)
     KERNEL_VERSION=$(uname -r)
+    
+    # Check if kernel modules exist for this version
+    if [[ ! -d "/lib/modules/${KERNEL_VERSION}" ]]; then
+        log_warn "Kernel modules not found for ${KERNEL_VERSION}"
+        log_info "Searching for installed kernel in /lib/modules/..."
+        
+        # Find the newest installed kernel in /lib/modules/
+        KERNEL_VERSION=$(ls -1 /lib/modules/ 2>/dev/null | sort -V | tail -1)
+        
+        if [[ -z "${KERNEL_VERSION}" ]] || [[ ! -d "/lib/modules/${KERNEL_VERSION}" ]]; then
+            log_error "No kernel modules found in /lib/modules/"
+            log_error "Please install a kernel package or specify --kernel VERSION"
+            exit 1
+        fi
+        log_info "Found installed kernel: ${KERNEL_VERSION}"
+    fi
 fi
 log_info "Building initramfs for kernel: ${KERNEL_VERSION}"
+
+# Verify kernel modules directory exists
+if [[ ! -d "/lib/modules/${KERNEL_VERSION}" ]]; then
+    log_error "Kernel modules directory not found: /lib/modules/${KERNEL_VERSION}"
+    log_error "Available kernels:"
+    ls -1 /lib/modules/ 2>/dev/null || echo "  (none)"
+    exit 1
+fi
 
 # Check for dracut
 if ! command -v dracut >/dev/null 2>&1; then

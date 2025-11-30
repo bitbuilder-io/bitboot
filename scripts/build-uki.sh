@@ -113,21 +113,30 @@ mkdir -p "${BUILD_DIR}/efi"
 
 # Auto-detect kernel if not specified
 if [[ -z "${KERNEL}" ]]; then
-    # Try common kernel paths
+    # Try common kernel paths (Fedora, Arch, Alpine, etc.)
     for kpath in \
         /boot/vmlinuz-linux-lts \
         /boot/vmlinuz-linux \
-        /lib/modules/*/vmlinuz \
-        /boot/vmlinuz
+        /boot/vmlinuz \
+        /lib/modules/*/vmlinuz
     do
-        if [[ -f "${kpath}" ]]; then
-            KERNEL="${kpath}"
-            break
-        fi
+        # Handle glob patterns
+        for k in ${kpath}; do
+            if [[ -f "${k}" ]]; then
+                KERNEL="${k}"
+                break 2
+            fi
+        done
     done
     
+    # Fedora stores kernels with version suffix
     if [[ -z "${KERNEL}" ]]; then
+        KERNEL=$(ls -1 /boot/vmlinuz-* 2>/dev/null | sort -V | tail -1)
+    fi
+    
+    if [[ -z "${KERNEL}" ]] || [[ ! -f "${KERNEL}" ]]; then
         log_error "Could not find kernel image. Use --kernel to specify."
+        log_error "Searched in /boot/vmlinuz*, /lib/modules/*/vmlinuz"
         exit 1
     fi
 fi
@@ -148,7 +157,12 @@ if [[ -z "${INITRD}" ]]; then
         fi
     done
     
+    # Fedora stores initramfs with version suffix
     if [[ -z "${INITRD}" ]]; then
+        INITRD=$(ls -1 /boot/initramfs-*.img 2>/dev/null | grep -v rescue | sort -V | tail -1)
+    fi
+    
+    if [[ -z "${INITRD}" ]] || [[ ! -f "${INITRD}" ]]; then
         log_warn "No initramfs found. Building one..."
         "${SCRIPT_DIR}/build-initramfs.sh" --output "${BUILD_DIR}/initramfs-bitboot.img"
         INITRD="${BUILD_DIR}/initramfs-bitboot.img"
