@@ -8,7 +8,7 @@
 #   --output DIR      Output directory (default: ./build/deps)
 #   --zbm-version VER ZFSBootMenu version (default: latest)
 #   --netboot-version Netboot.xyz version (default: latest)
-#   --alpine-version  Alpine Linux version (default: v3.21)
+#   --alpine-version  Alpine Linux version (default: edge)
 #   --skip-zbm        Skip ZFSBootMenu download
 #   --skip-netboot    Skip netboot.xyz download
 #   --skip-alpine     Skip Alpine Linux download
@@ -22,7 +22,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 OUTPUT_DIR="${PROJECT_DIR}/build/deps"
 ZBM_VERSION="latest"
 NETBOOT_VERSION="latest"
-ALPINE_VERSION="v3.21"
+ALPINE_VERSION="edge"
 SKIP_ZBM=false
 SKIP_NETBOOT=false
 SKIP_ALPINE=false
@@ -187,8 +187,6 @@ fetch_alpine() {
     # Download modloop (for ZFS and other modules)
     download_file "${alpine_base}/modloop-lts" "${OUTPUT_DIR}/alpine/modloop-lts"
     
-    # Download config for reference
-    download_file "${alpine_base}/config-lts" "${OUTPUT_DIR}/alpine/config-lts" || true
 }
 
 # Main execution
