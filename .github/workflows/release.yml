@@ -1,0 +1,160 @@
+# BitBoot Release Workflow
+# Automated release creation for tagged versions
+#
+# Triggers:
+# - Push of version tags (v*)
+#
+# Actions:
+# - Builds BitBoot UKI and USB image
+# - Creates GitHub release with artifacts
+# - Generates release notes
+
+name: Release BitBoot
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  BUILD_DIR: build
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    container:
+      image: registry.fedoraproject.org/fedora:41
+      options: --privileged
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          dnf install -y \
+            make \
+            gcc \
+            binutils \
+            systemd-boot-unsigned \
+            systemd-ukify \
+            dracut \
+            parted \
+            gdisk \
+            dosfstools \
+            e2fsprogs \
+            xz \
+            zstd \
+            gzip \
+            bzip2 \
+            curl \
+            wget \
+            kernel \
+            kernel-devel \
+            linux-firmware \
+            util-linux \
+            coreutils \
+            findutils \
+            file \
+            git
+
+      - name: Get version info
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building BitBoot ${VERSION}"
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Build all artifacts
+        run: make all
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
+
+      - name: Compress USB image
+        run: |
+          cd ${BUILD_DIR}
+          xz -9 -k bitboot-x86_64.img
+          # Create checksums for all artifacts
+          sha256sum efi/*.efi bitboot-x86_64.img bitboot-x86_64.img.xz > SHA256SUMS
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cat > release_notes.md << EOF
+          # BitBoot ${VERSION}
+
+          ## What's New
+          
+          This release includes the latest BitBoot multiboot USB system with support for:
+          
+          - **rd.systemd.pull** - Boot raw disk images directly from HTTP/HTTPS
+          - **ZFSBootMenu** - ZFS boot environment management
+          - **netboot.xyz** - iPXE network booting
+          - **Alpine Linux ZFS Installer** - For Root-on-ZFS installations
+          
+          ## Included Boot Profiles
+          
+          - Fedora CoreOS (Network Pull)
+          - Flatcar Container Linux (Network Pull)
+          - Alpine Linux ZFS Installer
+          - Alpine Linux Netboot
+          - NixOS Kexec Installer
+          - VyOS 1.5 Rolling
+          - ZFSBootMenu Recovery
+          - netboot.xyz
+          - BitBoot Recovery Shell
+          
+          ## Installation
+          
+          ### Quick Start
+          
+          \`\`\`bash
+          # Download the compressed USB image
+          wget https://github.com/\${GITHUB_REPOSITORY}/releases/download/${VERSION}/bitboot-x86_64.img.xz
+          
+          # Decompress and write to USB (replace /dev/sdX with your USB device)
+          xzcat bitboot-x86_64.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+          \`\`\`
+          
+          ### Verify Downloads
+          
+          \`\`\`bash
+          sha256sum -c SHA256SUMS
+          \`\`\`
+          
+          ## System Requirements
+          
+          - UEFI-capable system (64-bit x86_64)
+          - 512MB+ USB drive
+          - Network connection (for rd.systemd.pull profiles)
+          - Minimum 4GB RAM recommended for network booting
+          
+          ## Documentation
+          
+          See the [README](https://github.com/\${GITHUB_REPOSITORY}#readme) for detailed usage instructions.
+          EOF
+          cat release_notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: BitBoot ${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
+          files: |
+            ${{ env.BUILD_DIR }}/efi/*.efi
+            ${{ env.BUILD_DIR }}/bitboot-x86_64.img.xz
+            ${{ env.BUILD_DIR }}/SHA256SUMS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,188 @@
+# BitBoot Build Workflow
+# Main CI/CD pipeline for building the BitBoot multiboot USB system
+#
+# Triggers:
+# - Push to main branch
+# - Pull requests to main branch
+# - Manual workflow dispatch
+#
+# Outputs:
+# - bitboot.efi (Unified Kernel Image)
+# - bitboot-x86_64.img (Bootable USB image)
+
+name: Build BitBoot
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sign_uki:
+        description: 'Sign UKI for Secure Boot'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  BUILD_DIR: build
+
+jobs:
+  build:
+    name: Build BitBoot
+    runs-on: ubuntu-latest
+    container:
+      image: registry.fedoraproject.org/fedora:41
+      options: --privileged
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          dnf install -y \
+            make \
+            gcc \
+            binutils \
+            systemd-boot-unsigned \
+            systemd-ukify \
+            dracut \
+            parted \
+            gdisk \
+            dosfstools \
+            e2fsprogs \
+            xz \
+            zstd \
+            gzip \
+            bzip2 \
+            curl \
+            wget \
+            kernel \
+            kernel-devel \
+            linux-firmware \
+            util-linux \
+            coreutils \
+            findutils \
+            file
+
+      - name: Verify systemd version
+        run: |
+          echo "Checking systemd version (need v258+)..."
+          systemctl --version | head -1
+          SYSTEMD_VER=$(systemctl --version | head -1 | awk '{print $2}')
+          echo "systemd version: ${SYSTEMD_VER}"
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Fetch dependencies
+        run: make deps
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
+
+      - name: Build initramfs
+        run: make initramfs
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
+
+      - name: Build UKI
+        run: make uki
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
+
+      - name: Create USB image
+        run: make usb
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
+
+      - name: Verify build outputs
+        run: |
+          echo "=== Build Artifacts ==="
+          ls -la ${BUILD_DIR}/
+          echo ""
+          echo "=== UKI Directory ==="
+          ls -la ${BUILD_DIR}/efi/ || true
+          echo ""
+          echo "=== UKI Info ==="
+          for uki in ${BUILD_DIR}/efi/*.efi; do
+            if [[ -f "${uki}" ]]; then
+              echo "--- $(basename ${uki}) ---"
+              file "${uki}" || true
+              ls -lh "${uki}" || true
+            fi
+          done
+          echo ""
+          echo "=== USB Image Info ==="
+          file ${BUILD_DIR}/bitboot-x86_64.img || true
+          ls -lh ${BUILD_DIR}/bitboot-x86_64.img || true
+          echo ""
+          echo "=== Dependencies ==="
+          find ${BUILD_DIR}/deps -type f -exec ls -lh {} \; || true
+
+      - name: Upload UKI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitboot-ukis
+          path: ${{ env.BUILD_DIR }}/efi/
+          if-no-files-found: warn
+
+      - name: Upload USB image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitboot-usb-image
+          path: ${{ env.BUILD_DIR }}/bitboot-x86_64.img
+          if-no-files-found: warn
+          compression-level: 9
+
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitboot-deps
+          path: ${{ env.BUILD_DIR }}/deps/
+          if-no-files-found: warn
+
+  # Validation job to check boot entries and configurations
+  validate:
+    name: Validate Configuration
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate loader configuration
+        run: |
+          echo "=== Checking loader.conf ==="
+          cat config/loader/loader.conf
+          echo ""
+          
+          echo "=== Checking boot entries ==="
+          for entry in config/loader/entries/*.conf; do
+            echo "--- ${entry} ---"
+            cat "${entry}"
+            echo ""
+          done
+
+      - name: Validate kernel cmdline fragments
+        run: |
+          echo "=== Kernel command line fragments ==="
+          for conf in config/cmdline.d/*.conf; do
+            echo "--- ${conf} ---"
+            cat "${conf}"
+            echo ""
+          done
+
+      - name: Check for shell script issues
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            echo "Running shellcheck..."
+            shellcheck scripts/*.sh || true
+          else
+            echo "shellcheck not installed, skipping..."
+          fi
